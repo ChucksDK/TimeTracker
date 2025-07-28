@@ -1,6 +1,6 @@
 import { format, startOfWeek, addDays, isSameDay, addWeeks, subWeeks } from 'date-fns'
 
-export const HOURS = Array.from({ length: 10 }, (_, i) => i + 8) // 8 AM to 5 PM (6 PM is end time)
+export const HOURS = Array.from({ length: 24 }, (_, i) => i) // Full 24-hour day (0 = 12 AM, 23 = 11 PM)
 
 export const getWeekDays = (date: Date) => {
   const start = startOfWeek(date, { weekStartsOn: 1 }) // Monday start

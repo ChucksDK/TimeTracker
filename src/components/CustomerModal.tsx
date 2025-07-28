@@ -18,6 +18,7 @@ const customerSchema = z.object({
   vat_number: z.string().optional(),
   default_rate: z.number().min(0, 'Rate must be positive').optional(),
   rate_type: z.enum(['hourly', 'monthly']),
+  payment_terms: z.number().min(1, 'Payment terms must be at least 1 day').max(365, 'Payment terms cannot exceed 365 days').optional(),
 })
 
 type CustomerFormData = z.infer<typeof customerSchema>
@@ -27,13 +28,29 @@ interface CustomerModalProps {
   onClose: () => void
   customer?: Customer | null
   onSuccess?: () => void
+  onCustomerUpdate?: (customer: Customer) => void
 }
 
-export const CustomerModal = ({ isOpen, onClose, customer, onSuccess }: CustomerModalProps) => {
+export const CustomerModal = ({ isOpen, onClose, customer, onSuccess, onCustomerUpdate }: CustomerModalProps) => {
   const { user } = useAuth()
   const { addCustomer, setCustomers, customers } = useStore()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [additionalEmails, setAdditionalEmails] = useState<string[]>(customer?.additional_emails || [])
+
+  const addEmail = () => {
+    setAdditionalEmails([...additionalEmails, ''])
+  }
+
+  const removeEmail = (index: number) => {
+    setAdditionalEmails(additionalEmails.filter((_, i) => i !== index))
+  }
+
+  const updateEmail = (index: number, value: string) => {
+    const updated = [...additionalEmails]
+    updated[index] = value
+    setAdditionalEmails(updated)
+  }
 
   const {
     register,
@@ -51,6 +68,7 @@ export const CustomerModal = ({ isOpen, onClose, customer, onSuccess }: Customer
       vat_number: customer?.vat_number || '',
       default_rate: customer?.default_rate || 100,
       rate_type: customer?.rate_type || 'hourly',
+      payment_terms: customer?.payment_terms || 14,
     },
   })
 
@@ -65,7 +83,9 @@ export const CustomerModal = ({ isOpen, onClose, customer, onSuccess }: Customer
         vat_number: customer.vat_number || '',
         default_rate: customer.default_rate || 100,
         rate_type: customer.rate_type,
+        payment_terms: customer.payment_terms || 14,
       })
+      setAdditionalEmails(customer.additional_emails || [])
     } else {
       reset({
         company_name: '',
@@ -76,7 +96,9 @@ export const CustomerModal = ({ isOpen, onClose, customer, onSuccess }: Customer
         vat_number: '',
         default_rate: 100,
         rate_type: 'hourly',
+        payment_terms: 14,
       })
+      setAdditionalEmails([])
     }
   }, [customer, reset])
 
@@ -87,17 +109,30 @@ export const CustomerModal = ({ isOpen, onClose, customer, onSuccess }: Customer
     setError(null)
     
     try {
+      // Filter out empty additional emails
+      const validAdditionalEmails = additionalEmails.filter(email => email.trim() !== '')
+      
+      const customerData = {
+        ...data,
+        additional_emails: validAdditionalEmails,
+      }
+      
       if (customer) {
         // Update existing customer
-        const updated = await customerService.update(customer.id, data)
+        const updated = await customerService.update(customer.id, customerData)
         const updatedCustomers = customers.map(c => 
           c.id === updated.id ? updated : c
         )
         setCustomers(updatedCustomers)
+        
+        // Call the onCustomerUpdate callback if provided
+        if (onCustomerUpdate) {
+          onCustomerUpdate(updated)
+        }
       } else {
         // Create new customer
         const newCustomer = await customerService.create({
-          ...data,
+          ...customerData,
           user_id: user.id,
           default_rate: data.default_rate || 0,
         })
@@ -107,6 +142,7 @@ export const CustomerModal = ({ isOpen, onClose, customer, onSuccess }: Customer
       onSuccess?.()
       onClose()
       reset()
+      setAdditionalEmails([])
     } catch (err: any) {
       setError(err.message || 'Failed to save customer')
     } finally {
@@ -167,6 +203,52 @@ export const CustomerModal = ({ isOpen, onClose, customer, onSuccess }: Customer
             />
             {errors.email && (
               <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
+            )}
+          </div>
+          
+          {/* Additional Emails Section */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Additional Emails
+              </label>
+              <button
+                type="button"
+                onClick={addEmail}
+                className="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add Email
+              </button>
+            </div>
+            {additionalEmails.length > 0 && (
+              <div className="space-y-2">
+                {additionalEmails.map((email, index) => (
+                  <div key={index} className="flex items-center gap-2">
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => updateEmail(index, e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="additional@company.com"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeEmail(index)}
+                      className="p-2 text-red-500 hover:text-red-700 focus:outline-none"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {additionalEmails.length === 0 && (
+              <p className="text-sm text-gray-500">No additional emails. Click "Add Email" to add more recipients for invoices.</p>
             )}
           </div>
           
@@ -232,6 +314,23 @@ export const CustomerModal = ({ isOpen, onClose, customer, onSuccess }: Customer
                 <option value="hourly">Hourly</option>
                 <option value="monthly">Monthly</option>
               </select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Payment Terms (days)
+              </label>
+              <input
+                {...register('payment_terms', { valueAsNumber: true })}
+                type="number"
+                min="1"
+                max="365"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                placeholder="14"
+              />
+              {errors.payment_terms && (
+                <p className="text-red-500 text-sm mt-1">{errors.payment_terms.message}</p>
+              )}
             </div>
           </div>
           

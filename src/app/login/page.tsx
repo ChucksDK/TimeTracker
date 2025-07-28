@@ -12,10 +12,15 @@ export default function Login() {
   const [isSignUp, setIsSignUp] = useState(false)
   const router = useRouter()
 
+  console.log('Login component rendered', { email, loading, error })
+
   const handleAuth = async (e: React.FormEvent) => {
+    console.log('handleAuth called!', { email, password: password.length > 0 })
     e.preventDefault()
     setLoading(true)
     setError('')
+    
+    console.log('Starting authentication process...', { email, isSignUp })
 
     try {
       if (isSignUp) {
@@ -44,25 +49,20 @@ export default function Login() {
         
         alert('Check your email for the confirmation link!')
       } else {
-        // Use API route for login to ensure cookies are set server-side
-        const response = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ email, password }),
+        console.log('Attempting direct client-side login...')
+        // Use direct client-side login for proper session management
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
         })
-
-        const data = await response.json()
         
-        if (!response.ok) {
-          throw new Error(data.error || 'Login failed')
-        }
+        if (error) throw error
         
         console.log('Login successful:', data.user?.email)
         
-        // Force a hard redirect to ensure middleware picks it up
-        window.location.href = '/'
+        // The AuthProvider will automatically detect the auth state change
+        // and redirect will happen through middleware
+        console.log('Login completed, AuthProvider will handle the rest...')
       }
     } catch (error: any) {
       setError(error.message)

@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS profiles (
     email TEXT UNIQUE NOT NULL,
     company_name TEXT,
     internal_hourly_rate DECIMAL(10,2) DEFAULT 0,
+    currency TEXT CHECK (currency IN ('USD', 'EUR', 'DKK')) DEFAULT 'USD',
     company_details JSONB DEFAULT '{}',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -246,3 +247,15 @@ INSERT INTO customers (user_id, company_name, contact_person, email, default_rat
 ('00000000-0000-0000-0000-000000000000', 'E-commerce Co', 'Mike Davis', 'mike@ecommerce.com', 3000.00, 'monthly')
 ON CONFLICT DO NOTHING;
 */
+
+-- Migration: Add currency column to existing profiles table
+-- Run this if you already have a profiles table without the currency column
+DO $$ 
+BEGIN 
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'profiles' AND column_name = 'currency'
+    ) THEN
+        ALTER TABLE profiles ADD COLUMN currency TEXT CHECK (currency IN ('USD', 'EUR', 'DKK')) DEFAULT 'USD';
+    END IF;
+END $$;

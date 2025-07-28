@@ -1,9 +1,9 @@
-import { createClient } from '@supabase/supabase-js'
+import { createBrowserClient } from '@supabase/ssr'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey)
 
 export type Database = {
   public: {
@@ -134,6 +134,8 @@ export type Database = {
           user_id: string
           customer_id: string
           agreement_id: string | null
+          task_id: string | null
+          subtask: string | null
           task_description: string
           start_time: string
           end_time: string
@@ -141,6 +143,8 @@ export type Database = {
           is_billable: boolean
           is_invoiced: boolean
           invoice_id: string | null
+          drive_required: boolean
+          kilometers: number | null
           created_at: string
           updated_at: string
         }
@@ -149,6 +153,8 @@ export type Database = {
           user_id: string
           customer_id: string
           agreement_id?: string | null
+          task_id?: string | null
+          subtask?: string | null
           task_description: string
           start_time: string
           end_time: string
@@ -156,6 +162,8 @@ export type Database = {
           is_billable?: boolean
           is_invoiced?: boolean
           invoice_id?: string | null
+          drive_required?: boolean
+          kilometers?: number | null
           created_at?: string
           updated_at?: string
         }
@@ -164,6 +172,8 @@ export type Database = {
           user_id?: string
           customer_id?: string
           agreement_id?: string | null
+          task_id?: string | null
+          subtask?: string | null
           task_description?: string
           start_time?: string
           end_time?: string
@@ -171,6 +181,8 @@ export type Database = {
           is_billable?: boolean
           is_invoiced?: boolean
           invoice_id?: string | null
+          drive_required?: boolean
+          kilometers?: number | null
           created_at?: string
           updated_at?: string
         }
@@ -267,6 +279,38 @@ export type Database = {
           amount?: number
           time_entry_ids?: string[]
           created_at?: string
+        }
+      }
+      tasks: {
+        Row: {
+          id: string
+          user_id: string
+          customer_id: string
+          name: string
+          description: string | null
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          customer_id: string
+          name: string
+          description?: string | null
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          customer_id?: string
+          name?: string
+          description?: string | null
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
         }
       }
     }

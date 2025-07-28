@@ -4,6 +4,8 @@ import type { Database } from './supabase'
 type Customer = Database['public']['Tables']['customers']['Row']
 type TimeEntry = Database['public']['Tables']['time_entries']['Row']
 type Profile = Database['public']['Tables']['profiles']['Row']
+type Agreement = Database['public']['Tables']['agreements']['Row']
+type Task = Database['public']['Tables']['tasks']['Row']
 
 // Customer operations
 export const customerService = {
@@ -59,7 +61,8 @@ export const timeEntryService = {
       .from('time_entries')
       .select(`
         *,
-        customer:customers(*)
+        customer:customers(*),
+        task:tasks(*)
       `)
       .eq('user_id', userId)
       .order('start_time', { ascending: false })
@@ -83,7 +86,8 @@ export const timeEntryService = {
       .insert(timeEntry)
       .select(`
         *,
-        customer:customers(*)
+        customer:customers(*),
+        task:tasks(*)
       `)
       .single()
     
@@ -98,7 +102,8 @@ export const timeEntryService = {
       .eq('id', id)
       .select(`
         *,
-        customer:customers(*)
+        customer:customers(*),
+        task:tasks(*)
       `)
       .single()
     
@@ -150,6 +155,263 @@ export const profileService = {
     
     if (error) throw error
     return data
+  }
+}
+
+// Invoice operations
+export const invoiceService = {
+  async getAll(userId: string) {
+    const { data, error } = await supabase
+      .from('invoices')
+      .select(`
+        *,
+        customer:customers(*),
+        invoice_line_items(*)
+      `)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+    
+    if (error) throw error
+    return data
+  },
+
+  async getById(id: string) {
+    const { data, error } = await supabase
+      .from('invoices')
+      .select(`
+        *,
+        customer:customers(*),
+        invoice_line_items(*)
+      `)
+      .eq('id', id)
+      .single()
+    
+    if (error) throw error
+    return data
+  },
+
+  async create(invoice: Database['public']['Tables']['invoices']['Insert']) {
+    const { data, error } = await supabase
+      .from('invoices')
+      .insert(invoice)
+      .select(`
+        *,
+        customer:customers(*)
+      `)
+      .single()
+    
+    if (error) throw error
+    return data
+  },
+
+  async update(id: string, updates: Database['public']['Tables']['invoices']['Update']) {
+    const { data, error } = await supabase
+      .from('invoices')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select(`
+        *,
+        customer:customers(*)
+      `)
+      .single()
+    
+    if (error) throw error
+    return data
+  },
+
+  async delete(id: string) {
+    const { error } = await supabase
+      .from('invoices')
+      .delete()
+      .eq('id', id)
+    
+    if (error) throw error
+  },
+
+  async addLineItem(lineItem: Database['public']['Tables']['invoice_line_items']['Insert']) {
+    const { data, error } = await supabase
+      .from('invoice_line_items')
+      .insert(lineItem)
+      .select()
+      .single()
+    
+    if (error) throw error
+    return data
+  },
+
+  async generateInvoiceNumber(userId: string): Promise<string> {
+    // Get the latest invoice for this user
+    const { data, error } = await supabase
+      .from('invoices')
+      .select('invoice_number')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+    
+    if (error && error.code !== 'PGRST116') throw error
+    
+    // Generate new invoice number
+    const currentYear = new Date().getFullYear()
+    let nextNumber = 1
+    
+    if (data?.invoice_number) {
+      const match = data.invoice_number.match(/INV-(\d{4})-(\d+)/)
+      if (match && parseInt(match[1]) === currentYear) {
+        nextNumber = parseInt(match[2]) + 1
+      }
+    }
+    
+    return `INV-${currentYear}-${nextNumber.toString().padStart(3, '0')}`
+  }
+}
+
+// Agreement operations
+export const agreementService = {
+  async getAll(userId: string) {
+    const { data, error } = await supabase
+      .from('agreements')
+      .select(`
+        *,
+        customer:customers(*)
+      `)
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+    
+    if (error) throw error
+    return data
+  },
+
+  async getByCustomer(userId: string, customerId: string) {
+    const { data, error } = await supabase
+      .from('agreements')
+      .select(`
+        *,
+        customer:customers(*)
+      `)
+      .eq('user_id', userId)
+      .eq('customer_id', customerId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+    
+    if (error) throw error
+    return data
+  },
+
+  async getById(id: string) {
+    const { data, error } = await supabase
+      .from('agreements')
+      .select(`
+        *,
+        customer:customers(*)
+      `)
+      .eq('id', id)
+      .single()
+    
+    if (error) throw error
+    return data
+  },
+
+  async create(agreement: Database['public']['Tables']['agreements']['Insert']) {
+    const { data, error } = await supabase
+      .from('agreements')
+      .insert(agreement)
+      .select(`
+        *,
+        customer:customers(*)
+      `)
+      .single()
+    
+    if (error) throw error
+    return data
+  },
+
+  async update(id: string, agreement: Database['public']['Tables']['agreements']['Update']) {
+    const { data, error } = await supabase
+      .from('agreements')
+      .update(agreement)
+      .eq('id', id)
+      .select(`
+        *,
+        customer:customers(*)
+      `)
+      .single()
+    
+    if (error) throw error
+    return data
+  },
+
+  async delete(id: string) {
+    const { error } = await supabase
+      .from('agreements')
+      .update({ is_active: false })
+      .eq('id', id)
+    
+    if (error) throw error
+  }
+}
+
+// Task operations
+export const taskService = {
+  async getAll(userId: string) {
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .order('name')
+    
+    if (error) throw error
+    return data
+  },
+
+  async getByCustomer(userId: string, customerId: string) {
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('customer_id', customerId)
+      .eq('is_active', true)
+      .order('name')
+    
+    if (error) throw error
+    return data
+  },
+
+  async create(task: Database['public']['Tables']['tasks']['Insert']) {
+    const { data, error } = await supabase
+      .from('tasks')
+      .insert(task)
+      .select()
+      .single()
+    
+    if (error) throw error
+    return data
+  },
+
+  async update(id: string, task: Database['public']['Tables']['tasks']['Update']) {
+    const { data, error } = await supabase
+      .from('tasks')
+      .update(task)
+      .eq('id', id)
+      .select()
+      .single()
+    
+    if (error) throw error
+    return data
+  },
+
+  async delete(id: string) {
+    const { error } = await supabase
+      .from('tasks')
+      .update({ is_active: false })
+      .eq('id', id)
+    
+    if (error) throw error
   }
 }
 

@@ -44,3 +44,12 @@ nohup.out
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# server logs
+server.log
+
+# temporary debug files
+debug-*.sql
+
+# Resend API documentation (may contain sensitive info)
+public/Resend.md
