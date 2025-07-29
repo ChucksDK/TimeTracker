@@ -7,7 +7,7 @@ import { useAuth } from '@/components/AuthProvider'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { TimeEntry, Task } from '@/types'
+import { Task } from '@/types'
 import { timeEntryService, taskService } from '@/lib/database'
 import { format, differenceInMinutes } from 'date-fns'
 
@@ -65,7 +65,6 @@ export const TimeEntryForm = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showCustomerModal, setShowCustomerModal] = useState(false)
-  const [tasks, setTasks] = useState<Task[]>([])
   const [selectedCustomerTasks, setSelectedCustomerTasks] = useState<Task[]>([])
   const [showNewTaskInput, setShowNewTaskInput] = useState(false)
   const [newTaskName, setNewTaskName] = useState('')

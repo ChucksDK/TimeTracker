@@ -1,15 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { useAuth } from '@/components/AuthProvider'
 import { analyticsService, AnalyticsData, TimePeriod } from '@/lib/analytics'
 import { profileService } from '@/lib/database'
-import { formatCurrency, getCurrencySymbol, Currency } from '@/lib/currency'
+import { formatCurrency, Currency } from '@/lib/currency'
 import { format } from 'date-fns'
 import { Header } from '@/components/Header'
 import {
-  BarChart,
   Bar,
   LineChart,
   Line,
@@ -22,8 +20,6 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  Area,
-  AreaChart,
   ComposedChart
 } from 'recharts'
 
@@ -56,7 +52,6 @@ const KPICard = ({ title, value, subtitle, trend, currency, className = '' }: {
 }
 
 export default function AnalyticsPage() {
-  const router = useRouter()
   const { user } = useAuth()
   const [loading, setLoading] = useState(true)
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null)
