@@ -7,6 +7,7 @@ import { customerService, agreementService, invoiceService } from '@/lib/databas
 import { formatCurrency } from '@/lib/currency'
 import { format } from 'date-fns'
 import { Header } from '@/components/Header'
+import { CustomerModal } from '@/components/CustomerModal'
 import { useAuth } from '@/components/AuthProvider'
 import type { Customer, Agreement, Profile, Invoice } from '@/types'
 
@@ -19,6 +20,19 @@ function AgreementsContent() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [profile, setProfile] = useState<Profile | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [showCustomerModal, setShowCustomerModal] = useState(false)
+  
+  // Function to reload customers data
+  const reloadCustomers = async () => {
+    if (user) {
+      try {
+        const customersData = await customerService.getAll(user.id)
+        setCustomers(customersData)
+      } catch (error) {
+        console.error('Error reloading customers:', error)
+      }
+    }
+  }
   
   // Check if we're in create or edit mode
   const view = searchParams.get('view')
@@ -325,7 +339,7 @@ function AgreementsContent() {
                   <p className="text-sm text-gray-500">{customers.length} total</p>
                 </div>
                 <button
-                  onClick={() => router.push('/customers')}
+                  onClick={() => setShowCustomerModal(true)}
                   className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
                 >
                   Create
@@ -564,6 +578,17 @@ function AgreementsContent() {
           )}
         </div>
       </main>
+      
+      {showCustomerModal && (
+        <CustomerModal 
+          isOpen={showCustomerModal} 
+          onClose={() => setShowCustomerModal(false)}
+          onSuccess={() => {
+            setShowCustomerModal(false)
+            reloadCustomers()
+          }}
+        />
+      )}
     </div>
   )
 }
