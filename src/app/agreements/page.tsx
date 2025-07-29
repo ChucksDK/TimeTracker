@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { customerService, agreementService, invoiceService } from '@/lib/database'
@@ -10,7 +10,7 @@ import { Header } from '@/components/Header'
 import { useAuth } from '@/components/AuthProvider'
 import type { Customer, Agreement, Profile, Invoice } from '@/types'
 
-export default function OverviewPage() {
+function AgreementsContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user, loading } = useAuth()
@@ -565,5 +565,20 @@ export default function OverviewPage() {
         </div>
       </main>
     </div>
+  )
+}
+
+export default function OverviewPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    }>
+      <AgreementsContent />
+    </Suspense>
   )
 }
