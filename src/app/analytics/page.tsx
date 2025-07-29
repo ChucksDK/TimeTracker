@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '@/components/AuthProvider'
 import { analyticsService, AnalyticsData, TimePeriod } from '@/lib/analytics'
 import { profileService } from '@/lib/database'
@@ -67,7 +67,21 @@ export default function AnalyticsPage() {
       loadAnalytics()
       loadUserCurrency()
     }
-  }, [user, period])
+  }, [user, period, loadAnalytics, loadUserCurrency])
+
+  // Auto-refresh data every 30 seconds when page is visible
+  useEffect(() => {
+    if (!user) return
+
+    const interval = setInterval(() => {
+      if (!document.hidden) {
+        loadAnalytics()
+        loadUserCurrency()
+      }
+    }, 30000) // Refresh every 30 seconds
+
+    return () => clearInterval(interval)
+  }, [user, loadAnalytics, loadUserCurrency])
 
   useEffect(() => {
     const handleFocus = () => {
@@ -77,11 +91,25 @@ export default function AnalyticsPage() {
       }
     }
 
-    window.addEventListener('focus', handleFocus)
-    return () => window.removeEventListener('focus', handleFocus)
-  }, [user])
+    const handleVisibilityChange = () => {
+      if (!document.hidden && user) {
+        loadAnalytics()
+        loadUserCurrency()
+      }
+    }
 
-  const loadUserCurrency = async () => {
+    // Reload when window gets focus
+    window.addEventListener('focus', handleFocus)
+    // Reload when tab becomes visible
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    
+    return () => {
+      window.removeEventListener('focus', handleFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [user, loadAnalytics, loadUserCurrency])
+
+  const loadUserCurrency = useCallback(async () => {
     if (!user) return
     try {
       const profile = await profileService.get(user.id)
@@ -89,9 +117,9 @@ export default function AnalyticsPage() {
     } catch (err) {
       console.error('Failed to load currency:', err)
     }
-  }
+  }, [user])
 
-  const loadAnalytics = async () => {
+  const loadAnalytics = useCallback(async () => {
     if (!user) return
     
     try {
@@ -108,7 +136,7 @@ export default function AnalyticsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [user, period, customStartDate, customEndDate])
 
   const exportToCSV = () => {
     if (!analytics) return
