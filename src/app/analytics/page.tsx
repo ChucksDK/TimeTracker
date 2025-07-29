@@ -62,6 +62,35 @@ export default function AnalyticsPage() {
   const [customStartDate, setCustomStartDate] = useState('')
   const [customEndDate, setCustomEndDate] = useState('')
 
+  const loadUserCurrency = useCallback(async () => {
+    if (!user) return
+    try {
+      const profile = await profileService.get(user.id)
+      setCurrency(profile.currency || 'USD')
+    } catch (err) {
+      console.error('Failed to load currency:', err)
+    }
+  }, [user])
+
+  const loadAnalytics = useCallback(async () => {
+    if (!user) return
+    
+    try {
+      setLoading(true)
+      const data = await analyticsService.getMetrics(
+        user.id, 
+        period,
+        period === 'custom' ? new Date(customStartDate) : undefined,
+        period === 'custom' ? new Date(customEndDate) : undefined
+      )
+      setAnalytics(data)
+    } catch (err: any) {
+      setError(err.message || 'Failed to load analytics')
+    } finally {
+      setLoading(false)
+    }
+  }, [user, period, customStartDate, customEndDate])
+
   useEffect(() => {
     if (user) {
       loadAnalytics()
@@ -108,35 +137,6 @@ export default function AnalyticsPage() {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [user, loadAnalytics, loadUserCurrency])
-
-  const loadUserCurrency = useCallback(async () => {
-    if (!user) return
-    try {
-      const profile = await profileService.get(user.id)
-      setCurrency(profile.currency || 'USD')
-    } catch (err) {
-      console.error('Failed to load currency:', err)
-    }
-  }, [user])
-
-  const loadAnalytics = useCallback(async () => {
-    if (!user) return
-    
-    try {
-      setLoading(true)
-      const data = await analyticsService.getMetrics(
-        user.id, 
-        period,
-        period === 'custom' ? new Date(customStartDate) : undefined,
-        period === 'custom' ? new Date(customEndDate) : undefined
-      )
-      setAnalytics(data)
-    } catch (err: any) {
-      setError(err.message || 'Failed to load analytics')
-    } finally {
-      setLoading(false)
-    }
-  }, [user, period, customStartDate, customEndDate])
 
   const exportToCSV = () => {
     if (!analytics) return
