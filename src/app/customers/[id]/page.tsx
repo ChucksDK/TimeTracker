@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { agreementService, timeEntryService } from '@/lib/database'
+import { agreementService, timeEntryService, customerService } from '@/lib/database'
 import { formatCurrency } from '@/lib/currency'
 import { format } from 'date-fns'
 import { Header } from '@/components/Header'
@@ -21,6 +21,7 @@ export default function CustomerDetailPage() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [showEditModal, setShowEditModal] = useState(false)
+  const [deleteLoading, setDeleteLoading] = useState(false)
 
   useEffect(() => {
     const loadData = async () => {
@@ -83,6 +84,32 @@ export default function CustomerDetailPage() {
     setShowEditModal(false)
   }
 
+  const handleDeleteCustomer = async () => {
+    if (!customer || !user) return
+    
+    // Check if customer has time entries or agreements
+    const hasData = recentTimeEntries.length > 0 || agreements.length > 0
+    
+    const confirmMessage = hasData 
+      ? `Are you sure you want to delete "${customer.company_name}"? This will also delete all associated time entries and agreements. This action cannot be undone.`
+      : `Are you sure you want to delete "${customer.company_name}"? This action cannot be undone.`
+    
+    if (!confirm(confirmMessage)) return
+    
+    setDeleteLoading(true)
+    
+    try {
+      await customerService.delete(customer.id)
+      // Navigate back to agreements page after successful deletion
+      router.push('/agreements')
+    } catch (error) {
+      console.error('Error deleting customer:', error)
+      alert('Failed to delete customer. Please try again.')
+    } finally {
+      setDeleteLoading(false)
+    }
+  }
+
   // Show loading screen while auth is loading
   if (loading || isLoading) {
     return (
@@ -139,6 +166,13 @@ export default function CustomerDetailPage() {
                     className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
                   >
                     Edit Customer
+                  </button>
+                  <button
+                    onClick={handleDeleteCustomer}
+                    disabled={deleteLoading}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {deleteLoading ? 'Deleting...' : 'Delete Customer'}
                   </button>
                 </div>
               </div>
