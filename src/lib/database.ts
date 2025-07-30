@@ -6,6 +6,7 @@ type TimeEntry = Database['public']['Tables']['time_entries']['Row']
 type Profile = Database['public']['Tables']['profiles']['Row']
 type Agreement = Database['public']['Tables']['agreements']['Row']
 type Task = Database['public']['Tables']['tasks']['Row']
+type Expense = Database['public']['Tables']['expenses']['Row']
 
 // Customer operations
 export const customerService = {
@@ -408,6 +409,62 @@ export const taskService = {
   async delete(id: string) {
     const { error } = await supabase
       .from('tasks')
+      .update({ is_active: false })
+      .eq('id', id)
+    
+    if (error) throw error
+  }
+}
+
+// Expense operations
+export const expenseService = {
+  async getAll(userId: string) {
+    const { data, error } = await supabase
+      .from('expenses')
+      .select(`
+        *,
+        customer:customers(*)
+      `)
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .order('date', { ascending: false })
+    
+    if (error) throw error
+    return data
+  },
+
+  async create(expense: Database['public']['Tables']['expenses']['Insert']) {
+    const { data, error } = await supabase
+      .from('expenses')
+      .insert(expense)
+      .select(`
+        *,
+        customer:customers(*)
+      `)
+      .single()
+    
+    if (error) throw error
+    return data
+  },
+
+  async update(id: string, expense: Database['public']['Tables']['expenses']['Update']) {
+    const { data, error } = await supabase
+      .from('expenses')
+      .update(expense)
+      .eq('id', id)
+      .select(`
+        *,
+        customer:customers(*)
+      `)
+      .single()
+    
+    if (error) throw error
+    return data
+  },
+
+  async delete(id: string) {
+    const { error } = await supabase
+      .from('expenses')
       .update({ is_active: false })
       .eq('id', id)
     

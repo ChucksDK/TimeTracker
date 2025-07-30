@@ -3,13 +3,14 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { customerService, agreementService, invoiceService } from '@/lib/database'
+import { customerService, agreementService, invoiceService, expenseService } from '@/lib/database'
 import { formatCurrency } from '@/lib/currency'
 import { format } from 'date-fns'
 import { Header } from '@/components/Header'
 import { CustomerModal } from '@/components/CustomerModal'
+import { ExpenseModal } from '@/components/ExpenseModal'
 import { useAuth } from '@/components/AuthProvider'
-import type { Customer, Agreement, Profile, Invoice } from '@/types'
+import type { Customer, Agreement, Profile, Invoice, Expense } from '@/types'
 
 function AgreementsContent() {
   const router = useRouter()
@@ -18,11 +19,14 @@ function AgreementsContent() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [agreements, setAgreements] = useState<Agreement[]>([])
   const [invoices, setInvoices] = useState<Invoice[]>([])
+  const [expenses, setExpenses] = useState<Expense[]>([])
   const [profile, setProfile] = useState<Profile | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [showCustomerModal, setShowCustomerModal] = useState(false)
+  const [showExpenseModal, setShowExpenseModal] = useState(false)
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   
-  // Function to reload customers data
+  // Function to reload data
   const reloadCustomers = async () => {
     if (user) {
       try {
@@ -30,6 +34,18 @@ function AgreementsContent() {
         setCustomers(customersData)
       } catch (error) {
         console.error('Error reloading customers:', error)
+      }
+    }
+  }
+
+  const reloadExpenses = async () => {
+    if (user) {
+      try {
+        const expensesData = await expenseService.getAll(user.id)
+        setExpenses(expensesData)
+      } catch (error) {
+        console.warn('Expenses table may not exist yet:', error)
+        setExpenses([]) // Set empty array if expenses table doesn't exist
       }
     }
   }
@@ -57,6 +73,8 @@ function AgreementsContent() {
       if (user) {
         try {
           setIsLoading(true)
+          
+          // Load core data first
           const [customersData, agreementsData, invoicesData, profileData] = await Promise.all([
             customerService.getAll(user.id),
             agreementService.getAll(user.id),
@@ -68,6 +86,15 @@ function AgreementsContent() {
           setAgreements(agreementsData)
           setInvoices(invoicesData)
           if (profileData.data) setProfile(profileData.data)
+          
+          // Load expenses separately with error handling
+          try {
+            const expensesData = await expenseService.getAll(user.id)
+            setExpenses(expensesData)
+          } catch (expenseError) {
+            console.warn('Expenses table may not exist yet:', expenseError)
+            setExpenses([]) // Set empty array if expenses table doesn't exist
+          }
 
           // If in edit mode, load the specific agreement
           if (editId && agreementsData) {
@@ -171,6 +198,38 @@ function AgreementsContent() {
       alert(`Failed to ${isEditMode ? 'update' : 'create'} agreement`)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!editingAgreement || !user) return
+    
+    if (confirm('Are you sure you want to delete this agreement? This action cannot be undone.')) {
+      try {
+        setIsLoading(true)
+        await agreementService.delete(editingAgreement.id)
+        
+        // Refresh agreements list
+        const updatedAgreements = await agreementService.getAll(user.id)
+        setAgreements(updatedAgreements)
+        
+        // Reset form and go back to overview
+        setFormData({
+          name: '',
+          description: '',
+          customer_id: '',
+          start_date: '',
+          end_date: '',
+          is_active: true
+        })
+        setEditingAgreement(null)
+        router.push('/agreements')
+      } catch (error) {
+        console.error('Error deleting agreement:', error)
+        alert('Failed to delete agreement')
+      } finally {
+        setIsLoading(false)
+      }
     }
   }
 
@@ -301,24 +360,38 @@ function AgreementsContent() {
                     </label>
                   </div>
 
-                  <div className="flex justify-end space-x-3">
-                    <button
-                      type="button"
-                      onClick={() => router.push('/agreements')}
-                      className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isLoading}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      {isLoading 
-                        ? (isEditMode ? 'Updating...' : 'Creating...') 
-                        : (isEditMode ? 'Update Agreement' : 'Create Agreement')
-                      }
-                    </button>
+                  <div className="flex justify-between">
+                    <div>
+                      {isEditMode && editingAgreement && (
+                        <button
+                          type="button"
+                          onClick={handleDelete}
+                          disabled={isLoading}
+                          className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+                        >
+                          {isLoading ? 'Deleting...' : 'Delete Agreement'}
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex space-x-3">
+                      <button
+                        type="button"
+                        onClick={() => router.push('/agreements')}
+                        className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isLoading}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {isLoading 
+                          ? (isEditMode ? 'Updating...' : 'Creating...') 
+                          : (isEditMode ? 'Update Agreement' : 'Create Agreement')
+                        }
+                      </button>
+                    </div>
                   </div>
                 </form>
               </div>
@@ -330,7 +403,7 @@ function AgreementsContent() {
                 <p className="text-gray-600">Manage your customers, agreements, and invoices</p>
               </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             {/* Customers Section */}
             <div className="bg-white rounded-lg shadow">
               <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
@@ -521,6 +594,79 @@ function AgreementsContent() {
                 )}
               </div>
             </div>
+
+            {/* Expenses Section */}
+            <div className="bg-white rounded-lg shadow">
+              <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Expenses</h2>
+                  <p className="text-sm text-gray-500">{expenses.length} total</p>
+                </div>
+                <button
+                  onClick={() => setShowExpenseModal(true)}
+                  className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                >
+                  Create
+                </button>
+              </div>
+              <div className="p-6">
+                {expenses.length === 0 ? (
+                  <div className="text-center py-8">
+                    <div className="text-gray-500 mb-2">
+                      <svg className="mx-auto h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                      </svg>
+                    </div>
+                    <p className="text-gray-500 text-sm">No expenses yet</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {expenses.slice(0, 5).map((expense) => (
+                      <div key={expense.id} className="border border-gray-200 rounded-lg p-3">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h3 className="font-medium text-gray-900 text-sm">{expense.name}</h3>
+                              <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                                expense.expense_type === 'monthly' 
+                                  ? 'bg-blue-100 text-blue-800' 
+                                  : 'bg-gray-100 text-gray-800'
+                              }`}>
+                                {expense.expense_type === 'monthly' ? 'Monthly' : 'One-off'}
+                              </span>
+                            </div>
+                            {expense.customer && (
+                              <p className="text-xs text-gray-500">
+                                {expense.customer.company_name}
+                              </p>
+                            )}
+                            <p className="text-xs text-gray-900 font-medium">
+                              {formatCurrency(expense.amount, profile?.currency)}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setEditingExpense(expense)
+                              setShowExpenseModal(true)
+                            }}
+                            className="text-blue-600 hover:text-blue-700 text-xs"
+                          >
+                            Edit
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {expenses.length > 5 && (
+                      <div className="text-center pt-2">
+                        <span className="text-blue-600 text-sm">
+                          +{expenses.length - 5} more
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Summary Cards */}
@@ -586,6 +732,23 @@ function AgreementsContent() {
           onSuccess={() => {
             setShowCustomerModal(false)
             reloadCustomers()
+          }}
+        />
+      )}
+      
+      {showExpenseModal && (
+        <ExpenseModal 
+          isOpen={showExpenseModal} 
+          onClose={() => {
+            setShowExpenseModal(false)
+            setEditingExpense(null)
+          }}
+          expense={editingExpense}
+          customers={customers}
+          onSuccess={() => {
+            setShowExpenseModal(false)
+            setEditingExpense(null)
+            reloadExpenses()
           }}
         />
       )}

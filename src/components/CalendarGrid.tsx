@@ -81,8 +81,43 @@ export const CalendarGrid = ({ date, entries, isLastColumn = false }: CalendarGr
           const gridRect = gridRef.current.getBoundingClientRect()
           const minHour = Math.floor(startMinutes / 60)
           const hourHeight = 64 // h-16 = 64px
-          const formY = gridRect.top + (minHour * hourHeight) + window.scrollY
-          const formX = gridRect.right + 20 // 20px gap from calendar
+          
+          // Form dimensions (matching TimeEntryForm component)
+          const formWidth = 384 // w-96 = 24rem = 384px
+          const formHeight = 600 // Approximate height based on form content
+          const padding = 20 // Gap from edges
+          
+          // Calculate initial position
+          let formX = gridRect.right + padding
+          let formY = gridRect.top + (minHour * hourHeight) + window.scrollY
+          
+          // Get viewport dimensions
+          const viewportWidth = window.innerWidth
+          const viewportHeight = window.innerHeight
+          const scrollY = window.scrollY
+          
+          // Check if form would go off the right edge
+          if (formX + formWidth + padding > viewportWidth) {
+            // Position to the left of the calendar instead
+            formX = gridRect.left - formWidth - padding
+            
+            // If that would go off the left edge, position inside the viewport
+            if (formX < padding) {
+              formX = padding
+            }
+          }
+          
+          // Check if form would go off the bottom edge
+          const formBottom = formY - scrollY + formHeight
+          if (formBottom > viewportHeight - padding) {
+            // Adjust Y position to fit within viewport
+            formY = scrollY + viewportHeight - formHeight - padding
+            
+            // Make sure it doesn't go above the top edge
+            if (formY < scrollY + padding) {
+              formY = scrollY + padding
+            }
+          }
           
           setFormPosition({ x: formX, y: formY })
         }
@@ -451,10 +486,47 @@ export const CalendarGrid = ({ date, entries, isLastColumn = false }: CalendarGr
             onMouseLeave={handleEntryMouseLeave}
           >
             <div className="flex flex-col h-full">
-              <div className="font-semibold truncate text-xs">
-                {customers.find(c => c.id === entry.customer_id)?.company_name || 'Unknown Customer'}
+              <div className="flex items-center justify-between mb-1">
+                <div className="font-semibold truncate text-xs flex-1">
+                  {customers.find(c => c.id === entry.customer_id)?.company_name || 'Unknown Customer'}
+                </div>
+                <div className="flex items-center space-x-1 ml-1">
+                  {/* Billable/Non-billable icon */}
+                  {entry.is_billable ? (
+                    <div 
+                      className="w-3 h-3 rounded-full bg-green-400 flex items-center justify-center"
+                      title="Billable"
+                    >
+                      <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                  ) : (
+                    <div 
+                      className="w-3 h-3 rounded-full bg-gray-400 flex items-center justify-center"
+                      title="Non-billable"
+                    >
+                      <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                  )}
+                  
+                  {/* Invoiced icon - only show for billable entries that have been invoiced */}
+                  {entry.is_billable && entry.is_invoiced && (
+                    <div 
+                      className="w-3 h-3 rounded-full bg-blue-400 flex items-center justify-center"
+                      title="Added to invoice"
+                    >
+                      <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z" />
+                        <path fillRule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="text-xs truncate opacity-90 mt-0.5">
+              <div className="text-xs truncate opacity-90">
                 {entry.task?.name || 'No task'}
               </div>
             </div>

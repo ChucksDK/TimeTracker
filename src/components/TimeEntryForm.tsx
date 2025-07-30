@@ -9,12 +9,12 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Task } from '@/types'
 import { timeEntryService, taskService } from '@/lib/database'
-import { format, differenceInMinutes } from 'date-fns'
+import { format, differenceInMinutes, startOfWeek, endOfWeek } from 'date-fns'
 
 const timeEntrySchema = z.object({
   customer_id: z.string().min(1, 'Customer is required'),
   agreement_id: z.string().optional(),
-  task_id: z.string().min(1, 'Task is required'),
+  task_id: z.string().optional(),
   subtask: z.string().optional(),
   start_time: z.string(),
   start_hour: z.string(),
@@ -23,20 +23,20 @@ const timeEntrySchema = z.object({
   end_hour: z.string(),
   end_minute: z.string(),
   is_billable: z.boolean(),
+  is_internal: z.boolean(),
   drive_required: z.boolean(),
-  kilometers: z.number().min(0, 'Kilometers must be positive').optional(),
+  kilometers: z.any().optional(),
 }).refine(
   (data) => {
-    // If drive is required, kilometers must be provided and positive
-    if (data.drive_required) {
-      return data.kilometers !== undefined && data.kilometers > 0
+    // Task is required unless the customer is internal
+    if (data.customer_id && !data.is_internal) {
+      return data.task_id && data.task_id.length > 0
     }
-    // If drive is not required, kilometers should not be provided
-    return data.kilometers === undefined || data.kilometers === 0
+    return true
   },
   {
-    message: 'Kilometers required when drive is selected',
-    path: ['kilometers'],
+    message: 'Task is required for non-internal customers',
+    path: ['task_id'],
   }
 )
 
@@ -51,11 +51,13 @@ export const TimeEntryForm = () => {
     dragStart,
     dragEnd,
     formPosition,
+    selectedWeek,
     setShowEntryForm, 
     setEditingEntry,
     addTimeEntry,
     updateTimeEntry,
     deleteTimeEntry,
+    setTimeEntries,
     setDragStart,
     setDragEnd,
     setIsDragging,
@@ -79,9 +81,10 @@ export const TimeEntryForm = () => {
   } = useForm<TimeEntryFormData>({
     resolver: zodResolver(timeEntrySchema),
     defaultValues: {
-      task_description: editingEntry?.task_description || '',
       customer_id: editingEntry?.customer_id || '',
       agreement_id: editingEntry?.agreement_id || '',
+      task_id: editingEntry?.task_id || '',
+      subtask: editingEntry?.subtask || '',
       start_time: '',
       start_hour: '09',
       start_minute: '00',
@@ -89,6 +92,7 @@ export const TimeEntryForm = () => {
       end_hour: '10',
       end_minute: '00',
       is_billable: editingEntry?.is_billable ?? true,
+      is_internal: editingEntry?.is_internal ?? false,
       drive_required: editingEntry?.drive_required ?? false,
       kilometers: editingEntry?.kilometers || undefined,
     }
@@ -113,6 +117,7 @@ export const TimeEntryForm = () => {
         setValue('end_hour', endTime.getHours().toString().padStart(2, '0'))
         setValue('end_minute', endTime.getMinutes().toString().padStart(2, '0'))
         setValue('is_billable', editingEntry.is_billable)
+        setValue('is_internal', editingEntry.is_internal || false)
         setValue('drive_required', editingEntry.drive_required)
         setValue('kilometers', editingEntry.kilometers)
       } else if (dragStart && dragEnd) {
@@ -136,6 +141,7 @@ export const TimeEntryForm = () => {
         setValue('task_id', '')
         setValue('subtask', '')
         setValue('is_billable', true)
+        setValue('is_internal', false)
         setValue('drive_required', false)
         setValue('kilometers', undefined)
       }
@@ -144,7 +150,17 @@ export const TimeEntryForm = () => {
 
 
   const selectedCustomerId = watch('customer_id')
+  const selectedCustomer = customers.find(c => c.id === selectedCustomerId)
 
+  // Automatically set internal time when internal customer is selected
+  useEffect(() => {
+    if (selectedCustomer?.is_internal) {
+      setValue('is_internal', true)
+      setValue('is_billable', false)
+    } else if (selectedCustomer && !selectedCustomer.is_internal) {
+      setValue('is_internal', false)
+    }
+  }, [selectedCustomer, setValue])
 
   // Load tasks when customer changes
   useEffect(() => {
@@ -211,6 +227,18 @@ export const TimeEntryForm = () => {
   const onSubmit = async (data: TimeEntryFormData) => {
     if (!user) return
     
+    console.log('onSubmit called with data:', data)
+    console.log('editingEntry:', editingEntry)
+    
+    // Validate kilometers separately if drive is required
+    if (data.drive_required) {
+      const kilometers = data.kilometers
+      if (typeof kilometers !== 'number' || isNaN(kilometers) || kilometers <= 0) {
+        setError('Kilometers must be a positive number when drive is required')
+        return
+      }
+    }
+    
     setLoading(true)
     setError(null)
 
@@ -228,22 +256,46 @@ export const TimeEntryForm = () => {
         user_id: user.id,
         customer_id: data.customer_id,
         agreement_id: data.agreement_id || null,
-        task_id: data.task_id,
+        task_id: data.task_id || null,
         subtask: data.subtask || null,
         task_description: '', // Required field in DB, will be removed in future migration
         start_time: startTime.toISOString(),
         end_time: endTime.toISOString(),
         duration_minutes: durationMinutes,
-        is_billable: data.is_billable,
-        is_invoiced: false,
+        is_billable: data.is_billable && !data.is_internal, // Not billable if internal
+        is_internal: data.is_internal,
+        is_invoiced: editingEntry?.is_invoiced || false, // Preserve existing invoice status
         drive_required: data.drive_required,
-        kilometers: data.drive_required ? data.kilometers : null,
+        kilometers: data.drive_required && typeof data.kilometers === 'number' && !isNaN(data.kilometers) ? data.kilometers : null,
       }
 
       if (editingEntry) {
         // Update existing entry
         const updated = await timeEntryService.update(editingEntry.id, entryData)
-        updateTimeEntry(editingEntry.id, updated)
+        
+        // Check if the updated entry is in the current week view
+        const entryDate = new Date(updated.start_time)
+        const currentWeekStart = startOfWeek(selectedWeek, { weekStartsOn: 1 })
+        const currentWeekEnd = endOfWeek(selectedWeek, { weekStartsOn: 1 })
+        const isInCurrentWeek = entryDate >= currentWeekStart && entryDate <= currentWeekEnd
+        
+        if (isInCurrentWeek) {
+          // Entry is in current week, update the store
+          updateTimeEntry(editingEntry.id, updated)
+        } else {
+          // Entry is outside current week, we need to reload the current week's data
+          // to ensure any related changes are reflected (like if date was changed)
+          try {
+            const currentWeekEntries = await timeEntryService.getAll(
+              user.id,
+              currentWeekStart.toISOString(),
+              currentWeekEnd.toISOString()
+            )
+            setTimeEntries(currentWeekEntries)
+          } catch (reloadError) {
+            console.error('Failed to reload time entries after update:', reloadError)
+          }
+        }
       } else {
         // Create new entry
         const newEntry = await timeEntryService.create(entryData)
@@ -260,6 +312,7 @@ export const TimeEntryForm = () => {
 
       handleClose()
     } catch (err: any) {
+      console.error('Error saving time entry:', err)
       setError(err.message || 'Failed to save time entry')
     } finally {
       setLoading(false)
@@ -298,17 +351,53 @@ export const TimeEntryForm = () => {
 
   if (!showEntryForm) return null
 
-  const defaultPosition = { x: 300, y: 100 } // Fallback position
-  const position = formPosition || defaultPosition
+  // Calculate safe position that keeps form within viewport
+  const calculateSafePosition = () => {
+    const defaultPosition = { x: 300, y: 100 }
+    const position = formPosition || defaultPosition
+    
+    // Form dimensions
+    const formWidth = 384 // w-96 = 24rem = 384px
+    const padding = 20
+    
+    // Get viewport dimensions
+    const viewportWidth = window.innerWidth
+    const viewportHeight = window.innerHeight
+    
+    // Ensure form stays within viewport
+    let safeX = position.x
+    let safeY = position.y
+    
+    // Check right boundary
+    if (safeX + formWidth + padding > viewportWidth) {
+      safeX = viewportWidth - formWidth - padding
+    }
+    
+    // Check left boundary
+    if (safeX < padding) {
+      safeX = padding
+    }
+    
+    // Check top boundary (accounting for scroll)
+    if (safeY < window.scrollY + padding) {
+      safeY = window.scrollY + padding
+    }
+    
+    // For bottom boundary, we rely on maxHeight and overflow
+    
+    return { x: safeX, y: safeY }
+  }
+  
+  const safePosition = calculateSafePosition()
 
   return (
     <>
       <div 
         className="fixed bg-white rounded-lg shadow-2xl border border-gray-200 p-6 w-96 z-50"
         style={{
-          left: `${position.x}px`,
-          top: `${position.y}px`,
-          maxHeight: 'calc(100vh - 40px)',
+          left: `${safePosition.x}px`,
+          top: `${safePosition.y}px`,
+          maxHeight: `calc(100vh - ${Math.max(40, safePosition.y - window.scrollY + 20)}px)`,
           overflowY: 'auto'
         }}
       >
@@ -343,7 +432,7 @@ export const TimeEntryForm = () => {
               disabled={loading}
             >
               <option value="">Select a customer</option>
-              {customers.map((customer) => (
+              {customers.filter(customer => customer.is_active !== false).map((customer) => (
                 <option key={customer.id} value={customer.id}>
                   {customer.company_name}
                 </option>
@@ -513,16 +602,27 @@ export const TimeEntryForm = () => {
             </div>
           </div>
 
-          <div>
-            <label className="flex items-center space-x-2">
-              <input
-                {...register('is_billable')}
-                type="checkbox"
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                disabled={loading}
-              />
-              <span className="text-sm text-gray-700">Billable</span>
-            </label>
+          <div className="space-y-2">
+            {selectedCustomer?.is_internal && (
+              <div className="flex items-center space-x-2 text-sm text-gray-600">
+                <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>Internal Time</span>
+              </div>
+            )}
+            
+            {!selectedCustomer?.is_internal && (
+              <label className="flex items-center space-x-2">
+                <input
+                  {...register('is_billable')}
+                  type="checkbox"
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  disabled={loading}
+                />
+                <span className="text-sm text-gray-700">Billable</span>
+              </label>
+            )}
           </div>
 
           <div>
@@ -543,7 +643,10 @@ export const TimeEntryForm = () => {
                 Kilometers
               </label>
               <input
-                {...register('kilometers', { valueAsNumber: true })}
+                {...register('kilometers', { 
+                  valueAsNumber: true,
+                  setValueAs: (value) => value === '' || isNaN(value) ? undefined : value
+                })}
                 type="number"
                 step="0.1"
                 min="0"

@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { TimeEntry, Customer, Profile } from '@/types'
+import { TimeEntry, Customer, Profile, Expense } from '@/types'
 import { 
   startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear,
   format, getWeek, getMonth, getYear, startOfDay, eachDayOfInterval, eachMonthOfInterval
@@ -11,8 +11,12 @@ export interface AnalyticsData {
   totalHours: number
   billableHours: number
   nonBillableHours: number
+  internalHours: number
   revenue: number
   costs: number
+  expenses: number
+  monthlyExpenses: number
+  oneOffExpenses: number
   ebitda: number
   ebitdaMargin: number
   activeClients: number
@@ -22,6 +26,7 @@ export interface AnalyticsData {
     hours: number; 
     revenue: number; 
     costs: number; 
+    expenses: number;
     profit: number; 
     profitMargin: number;
     kilometers: number;
@@ -31,8 +36,10 @@ export interface AnalyticsData {
     date: string; 
     billable: number; 
     nonBillable: number; 
+    internal: number;
     revenue: number; 
     costs: number; 
+    expenses: number;
     profit: number 
   }[]
   grouping: 'daily' | 'weekly' | 'monthly'
@@ -101,7 +108,8 @@ export const analyticsService = {
         customer:customers(
           company_name,
           default_rate,
-          rate_type
+          rate_type,
+          is_internal
         )
       `)
       .eq('user_id', userId)
@@ -117,13 +125,38 @@ export const analyticsService = {
         customer:customers(
           company_name,
           default_rate,
-          rate_type
+          rate_type,
+          is_internal
         )
       `)
       .eq('user_id', userId)
       .gte('start_time', previousStartDate.toISOString())
       .lte('start_time', previousEndDate.toISOString())
       .order('start_time', { ascending: true })
+
+    // Fetch expenses for current period
+    let expenses: Expense[] = []
+    try {
+      const { data: expensesData } = await supabase
+        .from('expenses')
+        .select(`
+          *,
+          customer:customers(
+            company_name,
+            is_internal
+          )
+        `)
+        .eq('user_id', userId)
+        .eq('is_active', true)
+        .gte('date', startDate.toISOString())
+        .lte('date', endDate.toISOString())
+        .order('date', { ascending: true })
+      
+      expenses = expensesData || []
+    } catch (error) {
+      console.warn('Expenses table may not exist yet:', error)
+      expenses = []
+    }
 
     if (!timeEntries) {
       return getEmptyAnalytics()
@@ -154,7 +187,11 @@ export const analyticsService = {
     let totalMinutes = 0
     let billableMinutes = 0
     let nonBillableMinutes = 0
+    let internalMinutes = 0
     let totalRevenue = 0
+    let totalExpenses = 0
+    let monthlyExpenses = 0
+    let oneOffExpenses = 0
     let totalKilometers = 0
     const clientMap = new Map<string, { 
       name: string; 
@@ -162,24 +199,59 @@ export const analyticsService = {
       billableMinutes: number;
       revenue: number; 
       costs: number;
+      expenses: number;
       kilometers: number;
     }>()
     const timeMap = new Map<string, { 
       billable: number; 
       nonBillable: number; 
+      internal: number;
       revenue: number; 
-      costs: number 
+      costs: number;
+      expenses: number;
     }>()
     
     // Track monthly customers to avoid double-counting monthly rates
     const monthlyCustomersTracked = new Set<string>()
 
     timeEntries.forEach((entry) => {
+      // Skip internal time for client tracking and revenue calculations
+      if (entry.is_internal) {
+        totalMinutes += entry.duration_minutes
+        internalMinutes += entry.duration_minutes
+        const entryHours = entry.duration_minutes / 60
+        const entryCosts = entryHours * internalRate
+        
+        // Track time series data for internal time
+        const entryDate = new Date(entry.start_time)
+        let timeKey: string
+        
+        if (period === 'week' || period === 'month') {
+          timeKey = format(entryDate, 'yyyy-MM-dd')
+        } else {
+          timeKey = format(entryDate, 'yyyy-MM')
+        }
+        
+        const existing = timeMap.get(timeKey) || { 
+          billable: 0, 
+          nonBillable: 0, 
+          internal: 0,
+          revenue: 0, 
+          costs: 0,
+          expenses: 0
+        }
+        existing.internal += entryHours
+        existing.costs += entryCosts
+        timeMap.set(timeKey, existing)
+        
+        return // Skip rest of processing for internal time
+      }
+      
       totalMinutes += entry.duration_minutes
       const entryHours = entry.duration_minutes / 60
       const entryCosts = entryHours * internalRate
       
-      // Track kilometers
+      // Track kilometers (only for non-internal time)
       if (entry.drive_required && entry.kilometers) {
         totalKilometers += entry.kilometers
       }
@@ -187,10 +259,10 @@ export const analyticsService = {
       if (entry.is_billable) {
         billableMinutes += entry.duration_minutes
         
-        // Calculate revenue based on customer rate type
+        // Calculate revenue based on customer rate type (exclude internal customers)
         let entryRevenue = 0
         
-        if (entry.customer) {
+        if (entry.customer && !entry.customer.is_internal) {
           const customerRate = entry.customer.default_rate || 0
           
           if (entry.customer.rate_type === 'monthly') {
@@ -208,8 +280,8 @@ export const analyticsService = {
           }
         }
 
-        // Track per-client metrics
-        if (entry.customer) {
+        // Track per-client metrics (exclude internal customers)
+        if (entry.customer && !entry.customer.is_internal) {
           const clientKey = entry.customer_id
           const existing = clientMap.get(clientKey) || {
             name: entry.customer.company_name,
@@ -217,6 +289,7 @@ export const analyticsService = {
             billableMinutes: 0,
             revenue: 0,
             costs: 0,
+            expenses: 0,
             kilometers: 0
           }
           existing.minutes += entry.duration_minutes
@@ -231,8 +304,8 @@ export const analyticsService = {
       } else {
         nonBillableMinutes += entry.duration_minutes
         
-        // Track costs for non-billable time by client
-        if (entry.customer_id) {
+        // Track costs for non-billable time by client (exclude internal customers)
+        if (entry.customer_id && entry.customer && !entry.customer.is_internal) {
           const clientKey = entry.customer_id
           const existing = clientMap.get(clientKey) || {
             name: entry.customer?.company_name || 'Unknown',
@@ -240,6 +313,7 @@ export const analyticsService = {
             billableMinutes: 0,
             revenue: 0,
             costs: 0,
+            expenses: 0,
             kilometers: 0
           }
           existing.minutes += entry.duration_minutes
@@ -266,15 +340,17 @@ export const analyticsService = {
       const existing = timeMap.get(timeKey) || { 
         billable: 0, 
         nonBillable: 0, 
+        internal: 0,
         revenue: 0, 
-        costs: 0 
+        costs: 0,
+        expenses: 0 
       }
       
       if (entry.is_billable) {
         existing.billable += entryHours
         
-        // Add revenue calculation for time series based on customer rates
-        if (entry.customer) {
+        // Add revenue calculation for time series based on customer rates (exclude internal customers)
+        if (entry.customer && !entry.customer.is_internal) {
           const customerRate = entry.customer.default_rate || 0
           
           if (entry.customer.rate_type === 'monthly') {
@@ -291,16 +367,66 @@ export const analyticsService = {
       timeMap.set(timeKey, existing)
     })
 
+    // Process expenses
+    expenses.forEach((expense) => {
+      totalExpenses += expense.amount
+      
+      // Track monthly vs one-off expenses
+      if (expense.expense_type === 'monthly') {
+        monthlyExpenses += expense.amount
+      } else {
+        oneOffExpenses += expense.amount
+      }
+      
+      // Add expense to client map if associated with a customer
+      if (expense.customer_id && expense.customer && !expense.customer.is_internal) {
+        const clientKey = expense.customer_id
+        const existing = clientMap.get(clientKey) || {
+          name: expense.customer.company_name,
+          minutes: 0,
+          billableMinutes: 0,
+          revenue: 0,
+          costs: 0,
+          expenses: 0,
+          kilometers: 0
+        }
+        existing.expenses += expense.amount
+        clientMap.set(clientKey, existing)
+      }
+      
+      // Add expense to time series data
+      const expenseDate = new Date(expense.date)
+      let timeKey: string
+      
+      if (period === 'week' || period === 'month') {
+        timeKey = format(expenseDate, 'yyyy-MM-dd')
+      } else {
+        timeKey = format(expenseDate, 'yyyy-MM')
+      }
+      
+      const existing = timeMap.get(timeKey) || { 
+        billable: 0, 
+        nonBillable: 0, 
+        internal: 0,
+        revenue: 0, 
+        costs: 0,
+        expenses: 0 
+      }
+      existing.expenses += expense.amount
+      timeMap.set(timeKey, existing)
+    })
+
     // Convert minutes to hours
     const totalHours = totalMinutes / 60
     const billableHours = billableMinutes / 60
     const nonBillableHours = nonBillableMinutes / 60
+    const internalHours = internalMinutes / 60
 
     // Calculate costs (all hours * internal rate)
     const costs = totalHours * internalRate
 
-    // Calculate EBITDA
-    const ebitda = totalRevenue - costs
+    // Calculate EBITDA (Revenue - Costs - Expenses)
+    const ebitda = totalRevenue - costs - totalExpenses
     const ebitdaMargin = totalRevenue > 0 ? (ebitda / totalRevenue) * 100 : 0
 
     // Calculate previous period revenue
@@ -308,7 +434,7 @@ export const analyticsService = {
     const previousMonthlyCustomersTracked = new Set<string>()
     if (previousTimeEntries) {
       previousTimeEntries.forEach((entry) => {
-        if (entry.is_billable && entry.customer) {
+        if (entry.is_billable && entry.customer && !entry.customer.is_internal) {
           const hours = entry.duration_minutes / 60
           const customerRate = entry.customer.default_rate || 0
           
@@ -338,13 +464,14 @@ export const analyticsService = {
     // Convert maps to arrays with profitability calculations
     const hoursPerClient = Array.from(clientMap.values())
       .map(client => {
-        const profit = client.revenue - client.costs
+        const profit = client.revenue - client.costs - client.expenses
         const profitMargin = client.revenue > 0 ? (profit / client.revenue) * 100 : 0
         return {
           name: client.name,
           hours: client.minutes / 60,
           revenue: client.revenue,
           costs: client.costs,
+          expenses: client.expenses,
           profit: profit,
           profitMargin: profitMargin,
           kilometers: client.kilometers
@@ -358,8 +485,10 @@ export const analyticsService = {
       date: string; 
       billable: number; 
       nonBillable: number; 
+      internal: number;
       revenue: number; 
       costs: number; 
+      expenses: number;
       profit: number 
     }[] = []
     
@@ -368,15 +497,17 @@ export const analyticsService = {
       const days = eachDayOfInterval({ start: startDate, end: endDate })
       timeSeriesData = days.map(day => {
         const dateKey = format(day, 'yyyy-MM-dd')
-        const hours = timeMap.get(dateKey) || { billable: 0, nonBillable: 0, revenue: 0, costs: 0 }
-        const profit = hours.revenue - hours.costs
+        const hours = timeMap.get(dateKey) || { billable: 0, nonBillable: 0, internal: 0, revenue: 0, costs: 0, expenses: 0 }
+        const profit = hours.revenue - hours.costs - hours.expenses
         return {
           label: format(day, 'EEE d'),
           date: dateKey,
           billable: hours.billable,
           nonBillable: hours.nonBillable,
+          internal: hours.internal,
           revenue: hours.revenue,
           costs: hours.costs,
+          expenses: hours.expenses,
           profit: profit
         }
       })
@@ -385,15 +516,17 @@ export const analyticsService = {
       const days = eachDayOfInterval({ start: startDate, end: endDate })
       timeSeriesData = days.map(day => {
         const dateKey = format(day, 'yyyy-MM-dd')
-        const hours = timeMap.get(dateKey) || { billable: 0, nonBillable: 0, revenue: 0, costs: 0 }
-        const profit = hours.revenue - hours.costs
+        const hours = timeMap.get(dateKey) || { billable: 0, nonBillable: 0, internal: 0, revenue: 0, costs: 0, expenses: 0 }
+        const profit = hours.revenue - hours.costs - hours.expenses
         return {
           label: format(day, 'd'),
           date: dateKey,
           billable: hours.billable,
           nonBillable: hours.nonBillable,
+          internal: hours.internal,
           revenue: hours.revenue,
           costs: hours.costs,
+          expenses: hours.expenses,
           profit: profit
         }
       })
@@ -402,15 +535,17 @@ export const analyticsService = {
       const months = eachMonthOfInterval({ start: startDate, end: endDate })
       timeSeriesData = months.map(month => {
         const monthKey = format(month, 'yyyy-MM')
-        const hours = timeMap.get(monthKey) || { billable: 0, nonBillable: 0, revenue: 0, costs: 0 }
-        const profit = hours.revenue - hours.costs
+        const hours = timeMap.get(monthKey) || { billable: 0, nonBillable: 0, internal: 0, revenue: 0, costs: 0, expenses: 0 }
+        const profit = hours.revenue - hours.costs - hours.expenses
         return {
           label: format(month, 'MMM'),
           date: monthKey,
           billable: hours.billable,
           nonBillable: hours.nonBillable,
+          internal: hours.internal,
           revenue: hours.revenue,
           costs: hours.costs,
+          expenses: hours.expenses,
           profit: profit
         }
       })
@@ -418,12 +553,23 @@ export const analyticsService = {
     
     const grouping = period === 'week' ? 'daily' : period === 'month' ? 'daily' : 'monthly'
 
+    // Debug: Log the active clients being counted
+    console.log('Analytics Debug - Active clients being counted:')
+    console.log('Client map size:', clientMap.size)
+    clientMap.forEach((client, key) => {
+      console.log(`- ${client.name} (${key})`)
+    })
+
     return {
       totalHours: Math.round(totalHours * 100) / 100,
       billableHours: Math.round(billableHours * 100) / 100,
       nonBillableHours: Math.round(nonBillableHours * 100) / 100,
+      internalHours: Math.round(internalHours * 100) / 100,
       revenue: Math.round(totalRevenue * 100) / 100,
       costs: Math.round(costs * 100) / 100,
+      expenses: Math.round(totalExpenses * 100) / 100,
+      monthlyExpenses: Math.round(monthlyExpenses * 100) / 100,
+      oneOffExpenses: Math.round(oneOffExpenses * 100) / 100,
       ebitda: Math.round(ebitda * 100) / 100,
       ebitdaMargin: Math.round(ebitdaMargin * 100) / 100,
       activeClients: clientMap.size,
@@ -441,8 +587,12 @@ function getEmptyAnalytics(): AnalyticsData {
     totalHours: 0,
     billableHours: 0,
     nonBillableHours: 0,
+    internalHours: 0,
     revenue: 0,
     costs: 0,
+    expenses: 0,
+    monthlyExpenses: 0,
+    oneOffExpenses: 0,
     ebitda: 0,
     ebitdaMargin: 0,
     activeClients: 0,

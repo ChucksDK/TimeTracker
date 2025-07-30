@@ -12,6 +12,7 @@ export interface Customer {
   rate_type: 'hourly' | 'monthly'
   payment_terms?: number
   is_active: boolean
+  is_internal?: boolean
   created_at: string
   updated_at: string
 }
@@ -55,6 +56,7 @@ export interface TimeEntry {
   end_time: string
   duration_minutes: number
   is_billable: boolean
+  is_internal?: boolean
   is_invoiced: boolean
   invoice_id?: string
   drive_required: boolean
@@ -119,4 +121,19 @@ export interface InvoiceLineItem {
   amount: number
   time_entry_ids?: string[]
   created_at: string
+}
+
+export interface Expense {
+  id: string
+  user_id: string
+  customer_id?: string
+  name: string
+  amount: number
+  expense_type: 'one-off' | 'monthly'
+  category?: string
+  date: string
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  customer?: Customer
 }

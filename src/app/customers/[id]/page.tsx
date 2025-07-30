@@ -9,12 +9,14 @@ import { format } from 'date-fns'
 import { Header } from '@/components/Header'
 import { CustomerModal } from '@/components/CustomerModal'
 import { useAuth } from '@/components/AuthProvider'
+import { useStore } from '@/store/useStore'
 import type { Customer, Agreement, Profile, TimeEntry } from '@/types'
 
 export default function CustomerDetailPage() {
   const params = useParams()
   const router = useRouter()
   const { user, loading } = useAuth()
+  const { customers, setCustomers } = useStore()
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [agreements, setAgreements] = useState<Agreement[]>([])
   const [recentTimeEntries, setRecentTimeEntries] = useState<TimeEntry[]>([])
@@ -100,6 +102,8 @@ export default function CustomerDetailPage() {
     
     try {
       await customerService.delete(customer.id)
+      // Update the store to remove the deleted customer
+      setCustomers(customers.filter(c => c.id !== customer.id))
       // Navigate back to agreements page after successful deletion
       router.push('/agreements')
     } catch (error) {

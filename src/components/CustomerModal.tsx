@@ -19,6 +19,7 @@ const customerSchema = z.object({
   default_rate: z.number().min(0, 'Rate must be positive').optional(),
   rate_type: z.enum(['hourly', 'monthly']),
   payment_terms: z.number().min(1, 'Payment terms must be at least 1 day').max(365, 'Payment terms cannot exceed 365 days').optional(),
+  is_internal: z.boolean(),
 })
 
 type CustomerFormData = z.infer<typeof customerSchema>
@@ -56,6 +57,7 @@ export const CustomerModal = ({ isOpen, onClose, customer, onSuccess, onCustomer
     register,
     handleSubmit,
     reset,
+    watch,
     formState: { errors },
   } = useForm<CustomerFormData>({
     resolver: zodResolver(customerSchema),
@@ -66,9 +68,10 @@ export const CustomerModal = ({ isOpen, onClose, customer, onSuccess, onCustomer
       phone: customer?.phone || '',
       billing_address: customer?.billing_address || '',
       vat_number: customer?.vat_number || '',
-      default_rate: customer?.default_rate || 100,
+      default_rate: customer?.default_rate || undefined,
       rate_type: customer?.rate_type || 'hourly',
-      payment_terms: customer?.payment_terms || 14,
+      payment_terms: customer?.payment_terms || undefined,
+      is_internal: customer?.is_internal || false,
     },
   })
 
@@ -81,9 +84,10 @@ export const CustomerModal = ({ isOpen, onClose, customer, onSuccess, onCustomer
         phone: customer.phone || '',
         billing_address: customer.billing_address || '',
         vat_number: customer.vat_number || '',
-        default_rate: customer.default_rate || 100,
+        default_rate: customer.default_rate || undefined,
         rate_type: customer.rate_type,
-        payment_terms: customer.payment_terms || 14,
+        payment_terms: customer.payment_terms || undefined,
+        is_internal: customer.is_internal || false,
       })
       setAdditionalEmails(customer.additional_emails || [])
     } else {
@@ -94,13 +98,16 @@ export const CustomerModal = ({ isOpen, onClose, customer, onSuccess, onCustomer
         phone: '',
         billing_address: '',
         vat_number: '',
-        default_rate: 100,
+        default_rate: undefined,
         rate_type: 'hourly',
-        payment_terms: 14,
+        payment_terms: undefined,
+        is_internal: false,
       })
       setAdditionalEmails([])
     }
   }, [customer, reset])
+
+  const isInternal = watch('is_internal')
 
   const onSubmit = async (data: CustomerFormData) => {
     if (!user) return
@@ -115,6 +122,14 @@ export const CustomerModal = ({ isOpen, onClose, customer, onSuccess, onCustomer
       const customerData = {
         ...data,
         additional_emails: validAdditionalEmails,
+        // For internal customers, clear out non-essential fields
+        email: data.is_internal ? '' : data.email,
+        contact_person: data.is_internal ? '' : data.contact_person,
+        phone: data.is_internal ? '' : data.phone,
+        billing_address: data.is_internal ? '' : data.billing_address,
+        vat_number: data.is_internal ? '' : data.vat_number,
+        default_rate: data.is_internal ? 0 : data.default_rate,
+        payment_terms: data.is_internal ? undefined : data.payment_terms,
       }
       
       if (customer) {
@@ -181,48 +196,60 @@ export const CustomerModal = ({ isOpen, onClose, customer, onSuccess, onCustomer
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Contact Person
+            <label className="flex items-center space-x-2">
+              <input
+                {...register('is_internal')}
+                type="checkbox"
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm font-medium text-gray-700">Internal Time</span>
             </label>
-            <input
-              {...register('contact_person')}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              placeholder="John Doe"
-            />
           </div>
           
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Email
-            </label>
-            <input
-              {...register('email')}
-              type="email"
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              placeholder="contact@company.com"
-            />
-            {errors.email && (
-              <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
-            )}
-          </div>
+          {!isInternal && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Contact Person
+                </label>
+                <input
+                  {...register('contact_person')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="John Doe"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email
+                </label>
+                <input
+                  {...register('email')}
+                  type="email"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="contact@company.com"
+                />
+                {errors.email && (
+                  <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
+                )}
+              </div>
           
-          {/* Additional Emails Section */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700">
-                Additional Emails
-              </label>
-              <button
-                type="button"
-                onClick={addEmail}
-                className="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Add Email
-              </button>
-            </div>
+              {/* Additional Emails Section */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Additional Emails
+                  </label>
+                  <button
+                    type="button"
+                    onClick={addEmail}
+                    className="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    Add Email
+                  </button>
+                </div>
             {additionalEmails.length > 0 && (
               <div className="space-y-2">
                 {additionalEmails.map((email, index) => (
@@ -247,92 +274,92 @@ export const CustomerModal = ({ isOpen, onClose, customer, onSuccess, onCustomer
                 ))}
               </div>
             )}
-            {additionalEmails.length === 0 && (
-              <p className="text-sm text-gray-500">No additional emails. Click "Add Email" to add more recipients for invoices.</p>
-            )}
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Phone
-            </label>
-            <input
-              {...register('phone')}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              placeholder="+1 234 567 8900"
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Billing Address
-            </label>
-            <textarea
-              {...register('billing_address')}
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              placeholder="123 Main St&#10;New York, NY 10001"
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              VAT Number
-            </label>
-            <input
-              {...register('vat_number')}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              placeholder="US123456789"
-            />
-          </div>
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Default Rate
-              </label>
-              <input
-                {...register('default_rate', { valueAsNumber: true })}
-                type="number"
-                step="0.01"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                placeholder="150.00"
-              />
-              {errors.default_rate && (
-                <p className="mt-1 text-sm text-red-600">{errors.default_rate.message}</p>
-              )}
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Rate Type
-              </label>
-              <select
-                {...register('rate_type')}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="hourly">Hourly</option>
-                <option value="monthly">Monthly</option>
-              </select>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Payment Terms (days)
-              </label>
-              <input
-                {...register('payment_terms', { valueAsNumber: true })}
-                type="number"
-                min="1"
-                max="365"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                placeholder="14"
-              />
-              {errors.payment_terms && (
-                <p className="text-red-500 text-sm mt-1">{errors.payment_terms.message}</p>
-              )}
-            </div>
-          </div>
+                {additionalEmails.length === 0 && (
+                  <p className="text-sm text-gray-500">No additional emails. Click "Add Email" to add more recipients for invoices.</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Phone
+                </label>
+                <input
+                  {...register('phone')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="+1 234 567 8900"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Billing Address
+                </label>
+                <textarea
+                  {...register('billing_address')}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="123 Main St&#10;New York, NY 10001"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  VAT Number
+                </label>
+                <input
+                  {...register('vat_number')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="US123456789"
+                />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Default Rate
+                  </label>
+                  <input
+                    {...register('default_rate', { valueAsNumber: true })}
+                    type="number"
+                    step="0.01"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Enter rate"
+                  />
+                  {errors.default_rate && (
+                    <p className="mt-1 text-sm text-red-600">{errors.default_rate.message}</p>
+                  )}
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Rate Type
+                  </label>
+                  <select
+                    {...register('rate_type')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="hourly">Hourly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Payment Terms (days)
+                  </label>
+                  <input
+                    {...register('payment_terms', { valueAsNumber: true })}
+                    type="number"
+                    min="1"
+                    max="365"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Enter payment terms"
+                  />
+                  {errors.payment_terms && (
+                    <p className="text-red-500 text-sm mt-1">{errors.payment_terms.message}</p>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
           
           <div className="flex justify-end space-x-3 pt-4">
             <button

@@ -98,45 +98,6 @@ export default function AnalyticsPage() {
     }
   }, [user, period, loadAnalytics, loadUserCurrency])
 
-  // Auto-refresh data every 30 seconds when page is visible
-  useEffect(() => {
-    if (!user) return
-
-    const interval = setInterval(() => {
-      if (!document.hidden) {
-        loadAnalytics()
-        loadUserCurrency()
-      }
-    }, 30000) // Refresh every 30 seconds
-
-    return () => clearInterval(interval)
-  }, [user, loadAnalytics, loadUserCurrency])
-
-  useEffect(() => {
-    const handleFocus = () => {
-      if (user) {
-        loadAnalytics()
-        loadUserCurrency()
-      }
-    }
-
-    const handleVisibilityChange = () => {
-      if (!document.hidden && user) {
-        loadAnalytics()
-        loadUserCurrency()
-      }
-    }
-
-    // Reload when window gets focus
-    window.addEventListener('focus', handleFocus)
-    // Reload when tab becomes visible
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    
-    return () => {
-      window.removeEventListener('focus', handleFocus)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
-  }, [user, loadAnalytics, loadUserCurrency])
 
   const exportToCSV = () => {
     if (!analytics) return
@@ -199,12 +160,13 @@ export default function AnalyticsPage() {
     )
   }
 
-  const billableVsNonBillable = [
+  const hoursBreakdown = [
     { name: 'Billable', hours: analytics.billableHours, value: analytics.billableHours },
-    { name: 'Non-Billable', hours: analytics.nonBillableHours, value: analytics.nonBillableHours }
+    { name: 'Non-Billable', hours: analytics.nonBillableHours, value: analytics.nonBillableHours },
+    { name: 'Internal', hours: analytics.internalHours, value: analytics.internalHours }
   ]
 
-  const COLORS = ['#3B82F6', '#EF4444']
+  const COLORS = ['#3B82F6', '#EF4444', '#10B981']
 
   // Prepare data for revenue/profit chart
   const revenueProfitData = analytics.timeSeriesData.map(item => ({
@@ -354,9 +316,9 @@ export default function AnalyticsPage() {
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-600">Total Costs</span>
+                      <span className="text-gray-600">Total Expenses</span>
                       <span className="font-semibold text-red-600">
-                        -{formatCurrency(analytics.costs, currency)}
+                        -{formatCurrency(analytics.expenses, currency)}
                       </span>
                     </div>
                     <div className="border-t pt-4">
@@ -382,23 +344,32 @@ export default function AnalyticsPage() {
                   <ResponsiveContainer width="100%" height={200}>
                     <PieChart>
                       <Pie
-                        data={billableVsNonBillable}
+                        data={hoursBreakdown}
                         cx="50%"
                         cy="50%"
-                        innerRadius={0}
-                        outerRadius={60}
+                        innerRadius={40}
+                        outerRadius={70}
                         fill="#8884d8"
                         dataKey="value"
                       >
-                        {billableVsNonBillable.map((entry, index) => (
+                        {hoursBreakdown.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
-                      <Tooltip />
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: '#fff', 
+                          border: '1px solid #e5e7eb',
+                          borderRadius: '8px',
+                          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                        }}
+                        formatter={(value: any) => `${value.toFixed(1)}h`}
+                      />
                       <Legend 
                         formatter={(value, entry) => `${value}: ${entry.payload.value.toFixed(1)}h`}
                         verticalAlign="bottom"
                         height={36}
+                        iconType="circle"
                       />
                     </PieChart>
                   </ResponsiveContainer>
@@ -416,6 +387,13 @@ export default function AnalyticsPage() {
                         <span className="text-gray-600">Non-Billable</span>
                       </div>
                       <span className="font-semibold">{analytics.nonBillableHours.toFixed(1)}h</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <div className="flex items-center">
+                        <div className="w-3 h-3 bg-green-500 rounded-full mr-2"></div>
+                        <span className="text-gray-600">Internal</span>
+                      </div>
+                      <span className="font-semibold">{analytics.internalHours.toFixed(1)}h</span>
                     </div>
                   </div>
                 </div>
@@ -454,70 +432,86 @@ export default function AnalyticsPage() {
                         </span>
                       </div>
                     </div>
+                    <div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">Monthly Expenses</span>
+                        <span className="text-sm font-semibold text-red-600">
+                          {formatCurrency(analytics.monthlyExpenses, currency)}
+                        </span>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">One-off Expenses</span>
+                        <span className="text-sm font-semibold text-red-600">
+                          {formatCurrency(analytics.oneOffExpenses, currency)}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Time Series Charts */}
               {analytics.timeSeriesData.length > 0 && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                <div className="mb-10">
                   {/* Hours Trend */}
-                  <div className="bg-white rounded-lg shadow p-6">
-                    <h3 className="text-lg font-medium text-gray-900 mb-4">
+                  <div className="bg-white rounded-xl border border-gray-100 p-6 hover:shadow-lg transition-all duration-200">
+                    <h3 className="text-lg font-bold text-gray-900 mb-6">
                       {analytics.grouping === 'daily' ? 'Daily' : analytics.grouping === 'weekly' ? 'Weekly' : 'Monthly'} Hours Trend
                     </h3>
-                    <ResponsiveContainer width="100%" height={300}>
+                    <ResponsiveContainer width="100%" height={350}>
                       <LineChart data={analytics.timeSeriesData}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="label" />
-                        <YAxis />
-                        <Tooltip />
-                        <Legend />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                        <XAxis 
+                          dataKey="label" 
+                          tick={{ fill: '#6b7280' }}
+                          axisLine={{ stroke: '#e5e7eb' }}
+                        />
+                        <YAxis 
+                          tick={{ fill: '#6b7280' }}
+                          axisLine={{ stroke: '#e5e7eb' }}
+                        />
+                        <Tooltip 
+                          contentStyle={{ 
+                            backgroundColor: '#fff', 
+                            border: '1px solid #e5e7eb',
+                            borderRadius: '8px',
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                          }}
+                        />
+                        <Legend 
+                          wrapperStyle={{ paddingTop: '20px' }}
+                          iconType="circle"
+                        />
                         <Line 
                           type="monotone" 
                           dataKey="billable" 
-                          stroke="#3B82F6" 
+                          stroke="#3b82f6" 
                           name="Billable"
-                          strokeWidth={2}
+                          strokeWidth={3}
+                          dot={{ fill: '#3b82f6', strokeWidth: 2, r: 4 }}
+                          activeDot={{ r: 6 }}
                         />
                         <Line 
                           type="monotone" 
                           dataKey="nonBillable" 
-                          stroke="#EF4444" 
+                          stroke="#ef4444" 
                           name="Non-Billable"
-                          strokeWidth={2}
+                          strokeWidth={3}
+                          dot={{ fill: '#ef4444', strokeWidth: 2, r: 4 }}
+                          activeDot={{ r: 6 }}
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="internal" 
+                          stroke="#10b981" 
+                          name="Internal"
+                          strokeWidth={3}
+                          dot={{ fill: '#10b981', strokeWidth: 2, r: 4 }}
+                          activeDot={{ r: 6 }}
                         />
                       </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-
-                  {/* Revenue & Profit Trend */}
-                  <div className="bg-white rounded-lg shadow p-6">
-                    <h3 className="text-lg font-medium text-gray-900 mb-4">Revenue & Profit Trend</h3>
-                    <ResponsiveContainer width="100%" height={300}>
-                      <ComposedChart data={revenueProfitData}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="label" />
-                        <YAxis yAxisId="left" />
-                        <YAxis yAxisId="right" orientation="right" />
-                        <Tooltip 
-                          formatter={(value: any, name: string) => {
-                            if (name === 'Margin') return `${value.toFixed(1)}%`
-                            return formatCurrency(value as number, currency)
-                          }}
-                        />
-                        <Legend />
-                        <Bar yAxisId="left" dataKey="revenue" fill="#10B981" name="Revenue" />
-                        <Bar yAxisId="left" dataKey="profit" fill="#3B82F6" name="Profit" />
-                        <Line 
-                          yAxisId="right" 
-                          type="monotone" 
-                          dataKey="margin" 
-                          stroke="#F59E0B" 
-                          name="Margin %" 
-                          strokeWidth={2}
-                        />
-                      </ComposedChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
@@ -546,7 +540,7 @@ export default function AnalyticsPage() {
                             Avg Hourly Rate
                           </th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Costs
+                            Expenses
                           </th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Profit
@@ -575,7 +569,7 @@ export default function AnalyticsPage() {
                               {client.hours > 0 ? formatCurrency(client.revenue / client.hours, currency) : formatCurrency(0, currency)}/hr
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {formatCurrency(client.costs, currency)}
+                              {formatCurrency(client.expenses, currency)}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                               <span className={client.profit >= 0 ? 'text-green-600' : 'text-red-600'}>
